@@ -17,10 +17,9 @@ public static class XRPracticeSceneBuilder
 {
     private const string SampleRoot = "Assets/Samples";
     private const string SettingsRoot = "Assets/Settings";
+    private const string DirectGrabModelPath = "Assets/Art/KenneyFoodKit/Banana/banana.obj";
     private static readonly Color CubeColor = new Color(0.1f, 0.62f, 0.95f);
     private static readonly Color SphereColor = new Color(0.24f, 0.82f, 0.45f);
-    private static readonly Color ArtifactColor = new Color(0.8f, 0.42f, 0.16f);
-    private static readonly Color AccentColor = new Color(1f, 0.78f, 0.18f);
 
     [MenuItem("XR Practice/Import Samples, Configure OpenXR and Build Scene")]
     public static void RunCompleteSetup()
@@ -213,13 +212,31 @@ public static class XRPracticeSceneBuilder
         if (!EditorSceneManager.SaveScene(scene))
             throw new InvalidOperationException($"No se pudo guardar la escena XR: {scene.path}");
         Undo.CollapseUndoOperations(undoGroup);
-        Selection.activeGameObject = rig;
+        var banana = GameObject.Find("Kenney Banana (Direct Interactor)");
+        if (banana == null)
+            throw new InvalidOperationException("No se encontró la banana tras crear la escena.");
+
+        Selection.objects = new UnityEngine.Object[]
+        {
+            GameObject.Find("Practice Cube (Ray)"),
+            GameObject.Find("Practice Sphere (Ray)"),
+            banana,
+        };
+        Selection.activeGameObject = banana;
+        var sceneView = SceneView.lastActiveSceneView;
+        if (sceneView != null)
+        {
+            sceneView.pivot = new Vector3(0f, 1.1f, 2.4f);
+            sceneView.rotation = Quaternion.identity;
+            sceneView.size = 3.5f;
+            sceneView.Repaint();
+        }
 
         if (showDialog)
         {
             EditorUtility.DisplayDialog(
                 "XR Practice",
-                "Escena XR creada y guardada. El objeto de práctica es un modelo de sustitución: reemplázalo por un prefab de la Asset Store conservando XR Grab Interactable, Rigidbody y Collider.",
+                "Escena XR creada y guardada. La banana gratuita de Kenney reemplaza al objeto provisional y conserva XR Grab Interactable, Rigidbody y Collider.",
                 "Aceptar");
         }
     }
@@ -269,6 +286,7 @@ public static class XRPracticeSceneBuilder
             "Practice Cube (Ray)",
             "Practice Sphere (Ray)",
             "Asset Store Object (replace with your prefab)",
+            "Kenney Banana (Direct Interactor)",
             "XR Practice Status Canvas",
         };
 
@@ -306,7 +324,7 @@ public static class XRPracticeSceneBuilder
             SphereColor,
             Vector3.one);
 
-        CreateAssetStorePlaceholder(statusText);
+        CreateDirectGrabModel(statusText);
     }
 
     private static void CreateRayGrabObject(
@@ -326,41 +344,32 @@ public static class XRPracticeSceneBuilder
         target.AddComponent<XRSelectionColorFeedback>();
     }
 
-    private static void CreateAssetStorePlaceholder(Text statusText)
+    private static void CreateDirectGrabModel(Text statusText)
     {
-        var artifact = new GameObject("Asset Store Object (replace with your prefab)");
-        Undo.RegisterCreatedObjectUndo(artifact, "Create asset-store object placeholder");
-        artifact.transform.SetPositionAndRotation(new Vector3(0.55f, 0.58f, 0.85f), Quaternion.identity);
-        artifact.AddComponent<BoxCollider>().size = new Vector3(0.75f, 1.15f, 0.75f);
+        var modelPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(DirectGrabModelPath);
+        if (modelPrefab == null)
+            throw new InvalidOperationException($"No se encontró el modelo descargado: {DirectGrabModelPath}");
+
+        var visual = PrefabUtility.InstantiatePrefab(modelPrefab, SceneManager.GetActiveScene()) as GameObject;
+        if (visual == null)
+            throw new InvalidOperationException($"No se pudo instanciar el modelo descargado: {DirectGrabModelPath}");
+
+        Undo.RegisterCreatedObjectUndo(visual, "Create banana visual");
+        var artifact = new GameObject("Kenney Banana (Direct Interactor)");
+        Undo.RegisterCreatedObjectUndo(artifact, "Create Kenney Banana");
+        visual.name = "banana";
+        visual.transform.SetParent(artifact.transform, false);
+        visual.transform.localScale = Vector3.one * 1.5f;
+        artifact.transform.SetPositionAndRotation(
+            new Vector3(0.55f, -0.08f, 2.8f),
+            Quaternion.Euler(0f, 45f, 0f));
+        var collider = artifact.AddComponent<BoxCollider>();
+        collider.center = new Vector3(0f, 0.15f, 0f);
+        collider.size = new Vector3(0.24f, 0.34f, 1f);
         AddGrabComponents(artifact);
-
-        CreateArtifactPart(artifact.transform, PrimitiveType.Capsule, "Body", Vector3.zero,
-            new Vector3(0.5f, 0.55f, 0.5f), ArtifactColor);
-        CreateArtifactPart(artifact.transform, PrimitiveType.Sphere, "Top", new Vector3(0f, 0.48f, 0f),
-            new Vector3(0.36f, 0.36f, 0.36f), AccentColor);
-        CreateArtifactPart(artifact.transform, PrimitiveType.Cylinder, "Base", new Vector3(0f, -0.48f, 0f),
-            new Vector3(0.52f, 0.12f, 0.52f), new Color(0.16f, 0.22f, 0.28f));
-
+        artifact.GetComponent<Rigidbody>().mass = 0.35f;
         var status = artifact.AddComponent<GrabStatusUI>();
         status.SetStatusText(statusText);
-    }
-
-    private static void CreateArtifactPart(
-        Transform parent,
-        PrimitiveType primitive,
-        string partName,
-        Vector3 localPosition,
-        Vector3 localScale,
-        Color color)
-    {
-        var part = GameObject.CreatePrimitive(primitive);
-        part.name = partName;
-        part.transform.SetParent(parent, false);
-        part.transform.localPosition = localPosition;
-        part.transform.localRotation = Quaternion.identity;
-        part.transform.localScale = localScale;
-        UnityEngine.Object.DestroyImmediate(part.GetComponent<Collider>());
-        SetMaterial(part.GetComponent<Renderer>(), "XRPractice_" + partName + ".mat", color);
     }
 
     private static Text CreateStatusPanel()
